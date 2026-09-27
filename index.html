@@ -1,0 +1,1131 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>専用デイリー付箋ワークスペース</title>
+  <!-- Tailwind CSS & Lucide Icons -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    body { touch-action: pan-x pan-y; }
+    .board-bg {
+      background-size: 24px 24px;
+      background-image: 
+        linear-gradient(to right, rgba(0, 0, 0, 0.04) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(0, 0, 0, 0.04) 1px, transparent 1px);
+    }
+    .sticky-note {
+      box-shadow: 2px 4px 14px rgba(0, 0, 0, 0.07), 0 1px 3px rgba(0, 0, 0, 0.04);
+      transition: box-shadow 0.15s ease, transform 0.1s ease;
+    }
+    .sticky-note:hover {
+      box-shadow: 4px 8px 22px rgba(0, 0, 0, 0.12);
+    }
+    .completed-text {
+      text-decoration: line-through;
+      opacity: 0.55;
+    }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); border-radius: 9999px; }
+  </style>
+</head>
+<body class="bg-[#F8F9FA] text-stone-800 h-screen w-screen overflow-hidden flex flex-col font-sans select-none">
+
+  <!-- ==================== PC用 ヘッダー ==================== -->
+  <header class="hidden md:flex bg-white/95 backdrop-blur border-b border-stone-200 px-5 py-2.5 items-center justify-between z-30 shadow-sm gap-4">
+    <div class="flex items-center gap-2">
+      <div class="flex items-center bg-stone-100 rounded-lg p-1 border border-stone-200">
+        <button onclick="changeDate(-1)" class="p-1 hover:bg-white rounded transition text-stone-600" title="前日">
+          <i data-lucide="chevron-left" class="w-4 h-4"></i>
+        </button>
+        <input type="date" id="datePicker" class="bg-transparent text-sm font-semibold text-stone-700 px-2 outline-none cursor-pointer" onchange="onDateSelect(this.value)">
+        <button onclick="changeDate(1)" class="p-1 hover:bg-white rounded transition text-stone-600" title="翌日">
+          <i data-lucide="chevron-right" class="w-4 h-4"></i>
+        </button>
+      </div>
+      <button onclick="goToToday()" class="text-xs font-semibold px-2.5 py-1.5 bg-stone-100 hover:bg-stone-200 text-stone-600 rounded-md transition">今日</button>
+      <span id="dayOfWeekBadge" class="text-xs font-bold px-2 py-1 bg-amber-100 text-amber-800 rounded"></span>
+      <span id="syncIndicator" class="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold flex items-center gap-1">
+        <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> 同期中
+      </span>
+    </div>
+
+    <!-- タグフィルター ＆ タグ追加ボタン -->
+    <div class="flex items-center gap-1.5 overflow-x-auto py-1 max-w-lg" id="pcTagContainer"></div>
+
+    <!-- アクションボタン群 -->
+    <div class="flex items-center gap-2">
+      <button onclick="openFutureModal()" class="flex items-center gap-1 text-xs font-medium px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-md transition" title="先の予定・リマインド一覧を開く">
+        <i data-lucide="calendar-clock" class="w-3.5 h-3.5"></i>
+        <span id="futureCountBadge">未来の予定</span>
+      </button>
+
+      <button onclick="carryOverUnfinished()" class="flex items-center gap-1 text-xs font-medium px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300/80 rounded-md transition" title="未完了・作業中・回答待ちを翌日に引き継ぐ">
+        <i data-lucide="arrow-right-circle" class="w-3.5 h-3.5"></i>
+        <span>未完了を明日に繰越</span>
+      </button>
+
+      <button onclick="createNote()" class="flex items-center gap-1 text-xs font-semibold px-3.5 py-1.5 bg-stone-900 hover:bg-black text-white rounded-md shadow-sm transition">
+        <i data-lucide="plus" class="w-4 h-4"></i>
+        <span>付箋を追加</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- 週次エクスポート通知バー (PC専用) -->
+  <div id="weeklyBannerContainer" class="hidden md:flex flex-col bg-amber-50/90 border-b border-amber-200 px-5 py-2 gap-1.5 z-20 text-xs"></div>
+
+  <!-- ==================== スマホ用 ヘッダー＆即時入力バー ==================== -->
+  <div class="md:hidden flex flex-col bg-white border-b border-stone-200 z-30 shadow-sm">
+    <div class="p-3 bg-stone-50/80 border-b border-stone-200 flex flex-col gap-2">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-1.5">
+          <input type="date" id="mobileDatePicker" class="bg-transparent text-sm font-bold text-stone-800 outline-none" onchange="onDateSelect(this.value)">
+          <button onclick="goToToday()" class="text-[11px] font-medium px-2 py-0.5 bg-stone-200 rounded text-stone-700">今日</button>
+        </div>
+        <div class="flex items-center gap-2">
+          <span id="mobileSyncIndicator" class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" title="同期中"></span>
+          <button onclick="openFutureModal()" class="text-xs text-indigo-600 font-semibold flex items-center gap-0.5">
+            <i data-lucide="calendar-clock" class="w-3.5 h-3.5"></i> 予定一覧
+          </button>
+        </div>
+      </div>
+
+      <!-- スマホ即時メモ入力 -->
+      <form onsubmit="handleMobileQuickAdd(event)" class="flex items-center gap-1.5">
+        <input type="text" id="mobileQuickInput" placeholder="メモを入力... (Enterで即登録)" class="flex-1 text-xs bg-white border border-stone-300 rounded-lg px-3 py-2 outline-none focus:border-amber-500 shadow-inner">
+        <button type="submit" class="bg-stone-900 text-white p-2 rounded-lg shrink-0">
+          <i data-lucide="arrow-up" class="w-3.5 h-3.5"></i>
+        </button>
+      </form>
+
+      <!-- スマホ用：邪魔にならない「今日の一言」折りたたみカード -->
+      <details id="mobileDailyQuoteDetails" class="bg-amber-50/70 border border-amber-200/80 rounded-lg text-xs overflow-hidden transition">
+        <summary class="p-2 cursor-pointer font-bold text-amber-900 flex items-center justify-between select-none">
+          <span class="flex items-center gap-1.5 truncate">
+            <i data-lucide="sparkles" class="w-3.5 h-3.5 text-amber-600 shrink-0"></i>
+            <span id="mobileQuoteSummaryText">今日の一言（ナイス / 幸運 / 気づき）</span>
+          </span>
+          <i data-lucide="chevron-down" class="w-3.5 h-3.5 text-amber-600 shrink-0"></i>
+        </summary>
+        <div class="p-2.5 pt-0 space-y-1.5">
+          <textarea id="mobileDailyQuoteInput" oninput="saveDailyQuote(this.value)" rows="2" placeholder="①今日のナイス ②ツイてたこと ③気づき を1行..." class="w-full text-xs p-2 bg-white border border-amber-200 rounded outline-none text-stone-800 leading-relaxed"></textarea>
+          <div class="text-[10px] text-amber-800/70 text-right">※自動同期され、週末の週報に集計されます</div>
+        </div>
+      </details>
+    </div>
+
+    <!-- 検索 & タグバー -->
+    <div class="p-2 space-y-1.5">
+      <div class="relative">
+        <i data-lucide="search" class="w-3.5 h-3.5 text-stone-400 absolute left-2.5 top-2.5"></i>
+        <input type="text" id="mobileSearchInput" oninput="renderMobileList()" placeholder="検索..." class="w-full text-xs pl-8 pr-3 py-1.5 bg-stone-100 rounded-md outline-none">
+      </div>
+      <div class="flex items-center gap-1.5 overflow-x-auto py-1" id="mobileTagContainer"></div>
+    </div>
+  </div>
+
+  <!-- ==================== メイン描画エリア ==================== -->
+  <main id="boardCanvas" class="hidden md:block flex-1 w-full h-full relative overflow-auto board-bg p-6 cursor-crosshair">
+    <!-- PC用：左下常設の「今日の一言」手帳カード -->
+    <div class="fixed bottom-5 left-5 z-20 w-80 bg-white/95 backdrop-blur border border-amber-200 rounded-2xl p-3.5 shadow-lg space-y-2 pointer-events-auto">
+      <div class="flex items-center justify-between text-xs font-bold text-amber-950">
+        <span class="flex items-center gap-1.5">
+          <i data-lucide="sparkles" class="w-4 h-4 text-amber-600"></i>
+          今日の一言（勝ち癖・幸運ログ）
+        </span>
+        <span class="text-[10px] text-emerald-600 font-bold">クラウド同期</span>
+      </div>
+      <textarea id="pcDailyQuoteInput" oninput="saveDailyQuote(this.value)" rows="3" placeholder="① 今日のナイスプレイ（自力）&#10;② 今日のラッキー・感謝（他力）&#10;③ 学び・明日への一手（資産）" class="w-full text-xs p-2.5 bg-amber-50/40 border border-stone-200 rounded-xl outline-none focus:bg-white focus:border-amber-400 text-stone-800 leading-relaxed font-sans"></textarea>
+      <div class="text-[10px] text-stone-400 text-right">週末のMarkdown出力に自動反映</div>
+    </div>
+  </main>
+
+  <!-- スマホ: 縦並びカードリスト -->
+  <main id="mobileListContainer" class="md:hidden flex-1 overflow-y-auto p-3 space-y-3 pb-24 bg-stone-100/60"></main>
+
+  <!-- ==================== 付箋 詳細・編集モーダル ==================== -->
+  <div id="detailModal" class="fixed inset-0 bg-stone-900/40 backdrop-blur-sm hidden items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-xl w-full overflow-hidden flex flex-col max-h-[92vh]">
+      <div class="p-4 border-b border-stone-100 flex items-center justify-between bg-stone-50/70">
+        <div class="flex items-center gap-2">
+          <select id="modalStatus" class="text-xs font-bold rounded-lg border border-stone-300 px-2 py-1 outline-none bg-white">
+            <option value="todo">⚪ 未着手</option>
+            <option value="doing">🔵 作業中</option>
+            <option value="waiting">⏳ 回答待ち</option>
+            <option value="done">✅ 完了</option>
+          </select>
+          <select id="modalColor" class="text-xs rounded-lg border border-stone-300 px-2 py-1 outline-none bg-white">
+            <option value="yellow">💛 レモン黄</option>
+            <option value="blue">💙 スカイ青</option>
+            <option value="green">💚 ミント緑</option>
+            <option value="pink">💗 ローズ紅</option>
+            <option value="white">⚪ ホワイト</option>
+          </select>
+        </div>
+        <button onclick="closeModal()" class="text-stone-400 hover:text-stone-700 p-1 rounded-lg">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div class="p-5 overflow-y-auto space-y-4 text-xs">
+        <div>
+          <input type="text" id="modalTitle" placeholder="タイトルを入力..." class="w-full text-base font-bold text-stone-800 placeholder-stone-300 border-b border-stone-200 pb-1.5 outline-none focus:border-stone-800">
+          <div class="flex items-center gap-2 mt-2">
+            <span class="text-stone-400 font-medium">タグ:</span>
+            <input type="text" id="modalTag" placeholder="仕事, 場所, アイデア..." class="bg-stone-100 px-2.5 py-1 rounded border border-stone-200 outline-none w-48 text-stone-700">
+            <span class="text-[10px] text-stone-400">※カンマ区切りで複数可</span>
+          </div>
+        </div>
+
+        <!-- [定位置1] タスク・見え消しリスト -->
+        <div class="bg-stone-50/80 p-3 rounded-xl border border-stone-200/70">
+          <div class="flex items-center justify-between mb-2">
+            <span class="font-bold text-stone-700">タスク / 完了で見え消し</span>
+            <button onclick="addModalTodo()" class="text-amber-700 hover:text-amber-800 font-semibold flex items-center gap-0.5">
+              <i data-lucide="plus" class="w-3.5 h-3.5"></i> 項目追加
+            </button>
+          </div>
+          <div id="modalTodoList" class="space-y-1.5"></div>
+        </div>
+
+        <!-- [定位置2] フォルダパス / 参照先URL -->
+        <div class="bg-stone-50/80 p-3 rounded-xl border border-stone-200/70 space-y-1.5">
+          <div class="flex items-center justify-between">
+            <span class="font-bold text-stone-700 flex items-center gap-1">
+              <i data-lucide="folder-symlink" class="w-3.5 h-3.5 text-stone-500"></i>
+              PCフォルダパス または 参照URL
+            </span>
+            <button type="button" onclick="copyModalPath()" class="text-xs bg-white border border-stone-300 px-2 py-0.5 rounded text-stone-600 hover:bg-stone-100 flex items-center gap-1">
+              <i data-lucide="copy" class="w-3 h-3"></i> コピー
+            </button>
+          </div>
+          <input type="text" id="modalLinkPath" placeholder="例: C:\Work\2026\案件A\ または https://..." class="w-full bg-white border border-stone-200 rounded px-2.5 py-1.5 text-stone-700 outline-none focus:border-stone-400 font-mono text-[11px]">
+        </div>
+
+        <!-- [定位置3] 未来の予定・出現トリガー -->
+        <div class="bg-indigo-50/50 p-3 rounded-xl border border-indigo-100 space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="font-bold text-indigo-900 flex items-center gap-1">
+              <i data-lucide="clock" class="w-3.5 h-3.5 text-indigo-600"></i>
+              未来の予定・リマインド設定
+            </span>
+            <button type="button" onclick="clearModalTargetDate()" class="text-[10px] text-stone-400 hover:text-rose-600">設定を解除</button>
+          </div>
+          <div class="flex items-center gap-3 flex-wrap">
+            <div class="flex items-center gap-1">
+              <span class="text-stone-500">期日/終了日:</span>
+              <input type="date" id="modalTargetDate" class="bg-white border border-stone-200 rounded px-1.5 py-0.5 outline-none font-medium">
+            </div>
+          </div>
+          <div class="flex items-center gap-3 pt-1">
+            <span class="text-stone-500">出現トリガー:</span>
+            <label class="flex items-center gap-1 cursor-pointer"><input type="checkbox" id="remind_30" class="rounded text-indigo-600"> 1ヶ月前</label>
+            <label class="flex items-center gap-1 cursor-pointer"><input type="checkbox" id="remind_14" class="rounded text-indigo-600"> 2週間前</label>
+            <label class="flex items-center gap-1 cursor-pointer"><input type="checkbox" id="remind_3" class="rounded text-indigo-600"> 3日前</label>
+            <label class="flex items-center gap-1 cursor-pointer"><input type="checkbox" id="remind_0" class="rounded text-indigo-600"> 当日</label>
+          </div>
+        </div>
+
+        <!-- [定位置4] メール原文コピペ・進捗メモ -->
+        <div>
+          <label class="block font-bold text-stone-700 mb-1">メール原文コピペ ＆ 進捗やり取りメモ</label>
+          <textarea id="modalBody" rows="5" placeholder="メールの本文をコピペしたり、やり取りの履歴を追記..." class="w-full text-xs text-stone-700 bg-stone-50 border border-stone-200 rounded-xl p-3 outline-none focus:ring-1 focus:ring-stone-400 font-mono leading-relaxed"></textarea>
+        </div>
+      </div>
+
+      <div class="p-3 bg-stone-50 border-t border-stone-100 flex items-center justify-between">
+        <button onclick="deleteCurrentNote()" class="text-xs text-rose-600 hover:text-rose-700 font-semibold px-3 py-1.5 rounded transition">
+          この付箋を削除
+        </button>
+        <button onclick="saveAndCloseModal()" class="text-xs font-bold px-5 py-2 bg-stone-900 hover:bg-black text-white rounded-lg transition shadow-sm">
+          保存して閉じる
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== 未来のストック予定 モーダル ==================== -->
+  <div id="futureModal" class="fixed inset-0 bg-stone-900/40 backdrop-blur-sm hidden items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden flex flex-col max-h-[85vh]">
+      <div class="p-4 border-b border-stone-100 flex items-center justify-between bg-stone-50">
+        <h3 class="font-bold text-sm text-stone-800 flex items-center gap-1.5">
+          <i data-lucide="calendar-range" class="w-4 h-4 text-indigo-600"></i> 未来の予定・ストック一覧
+        </h3>
+        <button onclick="closeFutureModal()" class="text-stone-400 hover:text-stone-700 p-1">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+      <div id="futureListContainer" class="p-4 overflow-y-auto space-y-2 text-xs"></div>
+    </div>
+  </div>
+
+  <!-- ==================== Firebase & アプリスクリプト ==================== -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
+    import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+
+    // ユーザー専用のFirebase設定
+    const firebaseConfig = {
+      apiKey: "AIzaSyBuhoXYCSIWshroctLLbifq_eAHCdRRNJs",
+      authDomain: "memo1-0.firebaseapp.com",
+      projectId: "memo1-0",
+      storageBucket: "memo1-0.firebasestorage.app",
+      messagingSenderId: "196354181079",
+      appId: "1:196354181079:web:08434c3b82b35cb84a6d92"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    // グローバル変数
+    window.COLOR_CLASSES = {
+      yellow: 'bg-amber-50/95 border-amber-200 text-stone-800',
+      blue: 'bg-sky-50/95 border-sky-200 text-stone-800',
+      green: 'bg-emerald-50/95 border-emerald-200 text-stone-800',
+      pink: 'bg-rose-50/95 border-rose-200 text-stone-800',
+      white: 'bg-white border-stone-200 text-stone-800'
+    };
+
+    window.STATUS_INFO = {
+      todo:    { label: '未着手', badge: 'bg-stone-200 text-stone-700', border: '' },
+      doing:   { label: '作業中', badge: 'bg-blue-100 text-blue-800 font-bold', border: 'ring-2 ring-blue-400' },
+      waiting: { label: '回答待ち', badge: 'bg-amber-100 text-amber-900 font-bold', border: 'ring-2 ring-amber-400' },
+      done:    { label: '完了', badge: 'bg-stone-100 text-stone-400 line-through', border: 'opacity-60' }
+    };
+
+    window.currentDate = getTodayString();
+    window.currentFilterTag = 'ALL';
+    window.notes = [];
+    window.customTags = ['仕事', '場所', 'アイデア', 'ToDo'];
+    window.dailyQuotes = {};
+    window.activeEditingId = null;
+    window.downloadedWeeks = [];
+
+    function getTodayString() {
+      const d = new Date();
+      return d.toISOString().split('T')[0];
+    }
+
+    // ==================== クラウド同期リスナー（リアルタイム） ====================
+    const docRef = doc(db, "workspaces", "my_shared_board");
+
+    // クラウドからデータを受信したら即時画面更新
+    onSnapshot(docRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data.notes) window.notes = data.notes;
+        if (data.customTags) window.customTags = data.customTags;
+        if (data.dailyQuotes) window.dailyQuotes = data.dailyQuotes;
+        if (data.downloadedWeeks) window.downloadedWeeks = data.downloadedWeeks;
+      } else {
+        // 初回データ投入
+        window.notes = [
+          {
+            id: 'demo-1',
+            date: window.currentDate,
+            x: 40,
+            y: 40,
+            title: '〇〇社 見積作成・メール返信',
+            tag: '仕事',
+            color: 'yellow',
+            status: 'doing',
+            path: 'C:\\Work\\2026\\ProjectA\\',
+            todos: [
+              { text: 'メール原文の確認', done: true },
+              { text: '概算算出', done: false }
+            ],
+            body: '【メール原文】\nログイン画面の改修費用とスケジュールをお願いします。\n\n--- 進捗 ---\n一次回答済み。',
+            targetDate: '',
+            remindDays: []
+          },
+          {
+            id: 'demo-2',
+            date: '',
+            x: 360,
+            y: 40,
+            title: '京都 近代美術館 特別展',
+            tag: '場所',
+            color: 'green',
+            status: 'todo',
+            path: 'https://example.com/art',
+            todos: [{ text: 'チケット確認', done: false }],
+            body: '会期：〜11/15まで',
+            targetDate: '2026-11-15',
+            remindDays: [14, 3, 0]
+          }
+        ];
+        saveCloudData();
+      }
+      renderAll();
+      checkWeeklyExports();
+    });
+
+    // クラウドへ保存する関数
+    window.saveCloudData = async function() {
+      try {
+        await setDoc(docRef, {
+          notes: window.notes,
+          customTags: window.customTags,
+          dailyQuotes: window.dailyQuotes,
+          downloadedWeeks: window.downloadedWeeks,
+          updatedAt: new Date().toISOString()
+        });
+      } catch (err) {
+        console.error("Cloud save failed:", err);
+      }
+    };
+
+    // 初期化
+    document.getElementById('datePicker').value = window.currentDate;
+    document.getElementById('mobileDatePicker').value = window.currentDate;
+
+    // ==================== UI操作関数群（ウィンドウ公開） ====================
+    window.onDateSelect = function(val) {
+      if (!val) return;
+      window.currentDate = val;
+      document.getElementById('datePicker').value = window.currentDate;
+      document.getElementById('mobileDatePicker').value = window.currentDate;
+      renderAll();
+    };
+
+    window.changeDate = function(delta) {
+      const d = new Date(window.currentDate);
+      d.setDate(d.getDate() + delta);
+      window.currentDate = d.toISOString().split('T')[0];
+      document.getElementById('datePicker').value = window.currentDate;
+      document.getElementById('mobileDatePicker').value = window.currentDate;
+      renderAll();
+    };
+
+    window.goToToday = function() {
+      window.currentDate = getTodayString();
+      document.getElementById('datePicker').value = window.currentDate;
+      document.getElementById('mobileDatePicker').value = window.currentDate;
+      renderAll();
+    };
+
+    window.saveDailyQuote = function(text) {
+      window.dailyQuotes[window.currentDate] = text;
+      window.saveCloudData();
+      updateQuoteUI();
+    };
+
+    function updateQuoteUI() {
+      const q = window.dailyQuotes[window.currentDate] || '';
+      const pcInput = document.getElementById('pcDailyQuoteInput');
+      const mbInput = document.getElementById('mobileDailyQuoteInput');
+      const mbSummary = document.getElementById('mobileQuoteSummaryText');
+
+      if (pcInput && pcInput.value !== q) pcInput.value = q;
+      if (mbInput && mbInput.value !== q) mbInput.value = q;
+
+      if (mbSummary) {
+        if (q.trim()) {
+          mbSummary.textContent = `💭 ${q.trim()}`;
+          mbSummary.classList.add('text-stone-800');
+        } else {
+          mbSummary.textContent = '今日の一言（ナイス / 幸運 / 気づき）';
+          mbSummary.classList.remove('text-stone-800');
+        }
+      }
+    }
+
+    window.getAllTags = function() {
+      const set = new Set(window.customTags);
+      window.notes.forEach(n => {
+        if (n.tag) {
+          n.tag.split(',').forEach(t => {
+            const clean = t.trim();
+            if (clean) set.add(clean);
+          });
+        }
+      });
+      return Array.from(set);
+    };
+
+    window.addNewTagPrompt = function() {
+      const name = prompt('新しく追加したいタグ名を入力してください（例: 買物, 読書）:');
+      if (name) {
+        const clean = name.trim().replace(/^#/, '');
+        if (clean && !window.customTags.includes(clean)) {
+          window.customTags.push(clean);
+          window.saveCloudData();
+          setFilterTag(clean);
+        }
+      }
+    };
+
+    window.renderAll = function() {
+      renderTagFilters();
+      renderBoard();
+      renderMobileList();
+      updateDayBadge();
+      updateFutureCount();
+      updateQuoteUI();
+      lucide.createIcons();
+    };
+
+    function updateDayBadge() {
+      const days = ['日', '月', '火', '水', '木', '金', '土'];
+      const d = new Date(window.currentDate);
+      const b = document.getElementById('dayOfWeekBadge');
+      if (b) b.textContent = `${days[d.getDay()]}曜日`;
+    }
+
+    function updateFutureCount() {
+      const count = window.notes.filter(n => n.targetDate).length;
+      const badge = document.getElementById('futureCountBadge');
+      if (badge) badge.textContent = `未来の予定 (${count})`;
+    }
+
+    function renderTagFilters() {
+      const tags = window.getAllTags();
+      const pcContainer = document.getElementById('pcTagContainer');
+      const mobileContainer = document.getElementById('mobileTagContainer');
+
+      const makeBtn = (tag) => {
+        const isSelected = window.currentFilterTag === tag;
+        const cls = isSelected 
+          ? 'bg-stone-900 text-white font-bold' 
+          : 'bg-stone-100 text-stone-600 hover:bg-stone-200';
+        return `<button onclick="setFilterTag('${tag}')" class="px-2.5 py-1 text-xs rounded-full transition shrink-0 ${cls}">
+          ${tag === 'ALL' ? 'すべて' : '#' + tag}
+        </button>`;
+      };
+
+      const addBtn = `
+        <button onclick="addNewTagPrompt()" class="px-2 py-1 text-xs rounded-full border border-dashed border-stone-300 text-stone-500 hover:text-stone-800 hover:border-stone-500 flex items-center gap-0.5 shrink-0 transition" title="新しいタグを追加">
+          <i data-lucide="plus" class="w-3 h-3"></i> タグ追加
+        </button>
+      `;
+
+      const html = makeBtn('ALL') + tags.map(t => makeBtn(t)).join('') + addBtn;
+      if (pcContainer) pcContainer.innerHTML = html;
+      if (mobileContainer) mobileContainer.innerHTML = html;
+    }
+
+    window.setFilterTag = function(tag) {
+      window.currentFilterTag = tag;
+      renderAll();
+    };
+
+    function getNotesForDate(dateStr) {
+      const checkTime = new Date(dateStr).getTime();
+
+      return window.notes.filter(n => {
+        if (n.targetDate) {
+          const targetTime = new Date(n.targetDate).getTime();
+          const diffDays = Math.round((targetTime - checkTime) / (1000 * 60 * 60 * 24));
+          if (n.remindDays && n.remindDays.includes(diffDays)) return true;
+          return false;
+        }
+        return n.date === dateStr;
+      });
+    }
+
+    // ==================== PC ボード描画 ====================
+    function renderBoard() {
+      const canvas = document.getElementById('boardCanvas');
+      if (!canvas) return;
+      
+      const oldNotes = canvas.querySelectorAll('.sticky-note');
+      oldNotes.forEach(el => el.remove());
+
+      const dayNotes = getNotesForDate(window.currentDate);
+      const filtered = window.currentFilterTag === 'ALL' 
+        ? dayNotes 
+        : dayNotes.filter(n => (n.tag || '').includes(window.currentFilterTag));
+
+      filtered.forEach(note => {
+        const el = document.createElement('div');
+        const st = window.STATUS_INFO[note.status || 'todo'];
+        el.className = `sticky-note absolute p-3.5 rounded-2xl border w-72 cursor-grab active:cursor-grabbing select-none flex flex-col justify-between ${window.COLOR_CLASSES[note.color || 'yellow']} ${st.border}`;
+        el.style.left = `${note.x || 30}px`;
+        el.style.top = `${note.y || 30}px`;
+        el.dataset.id = note.id;
+
+        let todosHtml = '';
+        if (note.todos && note.todos.length > 0) {
+          todosHtml = `<div class="mt-2 space-y-1">` + note.todos.map((t, idx) => `
+            <div class="flex items-center gap-1.5 text-xs">
+              <input type="checkbox" ${t.done ? 'checked' : ''} onchange="toggleTodoItem('${note.id}', ${idx}, event)" class="rounded text-amber-600 focus:ring-0 cursor-pointer">
+              <span class="${t.done ? 'completed-text' : ''} truncate">${escapeHtml(t.text)}</span>
+            </div>
+          `).join('') + `</div>`;
+        }
+
+        let remindBadge = '';
+        if (note.targetDate) {
+          remindBadge = `<span class="text-[10px] font-bold bg-indigo-100 text-indigo-800 px-1.5 py-0.5 rounded flex items-center gap-0.5"><i data-lucide="clock" class="w-2.5 h-2.5"></i> ${note.targetDate.slice(5)}</span>`;
+        }
+
+        let pathBadge = '';
+        if (note.path) {
+          const isUrl = note.path.startsWith('http');
+          pathBadge = `
+            <button onclick="quickCopyPath('${escapeQuotes(note.path)}', event)" class="text-[10px] font-medium bg-black/5 hover:bg-black/10 text-stone-700 px-1.5 py-0.5 rounded flex items-center gap-1" title="クリックでパスをコピー">
+              <i data-lucide="${isUrl ? 'external-link' : 'folder'}" class="w-3 h-3"></i>
+              <span>${isUrl ? 'URL' : 'パス'}</span>
+            </button>
+          `;
+        }
+
+        el.innerHTML = `
+          <div>
+            <div class="flex items-start justify-between gap-1 mb-1.5">
+              <button onclick="cycleStatus('${note.id}', event)" class="text-[10px] px-2 py-0.5 rounded-full font-bold transition hover:opacity-80 ${st.badge}">
+                ${st.label}
+              </button>
+              <div class="flex items-center gap-1">
+                ${remindBadge}
+                ${pathBadge}
+              </div>
+            </div>
+            <h3 class="font-bold text-sm leading-snug line-clamp-2 ${note.status === 'done' ? 'completed-text' : ''}">${escapeHtml(note.title || '無題')}</h3>
+            ${note.tag ? `<div class="mt-1 flex gap-1 flex-wrap">${note.tag.split(',').map(t => `<span class="text-[10px] bg-black/5 px-1.5 py-0.2 rounded text-stone-600">#${escapeHtml(t.trim())}</span>`).join('')}</div>` : ''}
+            ${todosHtml}
+            ${note.body ? `<p class="text-xs text-stone-600 mt-2 line-clamp-2 whitespace-pre-wrap font-mono">${escapeHtml(note.body)}</p>` : ''}
+          </div>
+          <div class="mt-3 pt-2 border-t border-black/5 flex items-center justify-between text-[11px] text-stone-400">
+            <span>クリックで詳細</span>
+            <button onclick="deleteNoteQuick('${note.id}', event)" class="hover:text-rose-600 p-0.5 text-stone-400">
+              <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+            </button>
+          </div>
+        `;
+
+        enableDrag(el, note);
+
+        el.addEventListener('click', (e) => {
+          if (e.target.tagName.toLowerCase() === 'input' || e.target.closest('button')) return;
+          if (el.dataset.dragged === 'true') return;
+          openModal(note.id);
+        });
+
+        canvas.appendChild(el);
+      });
+
+      lucide.createIcons();
+    }
+
+    function enableDrag(element, noteData) {
+      let isDragging = false;
+      let startX, startY, origX, origY;
+
+      const onStart = (e) => {
+        if (e.target.tagName.toLowerCase() === 'input' || e.target.closest('button')) return;
+        isDragging = true;
+        element.dataset.dragged = 'false';
+        startX = e.clientX;
+        startY = e.clientY;
+        origX = noteData.x || 30;
+        origY = noteData.y || 30;
+        element.style.zIndex = 40;
+
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onEnd);
+      };
+
+      const onMove = (e) => {
+        if (!isDragging) return;
+        const dx = e.clientX - startX;
+        const dy = e.clientY - startY;
+        if (Math.abs(dx) > 3 || Math.abs(dy) > 3) element.dataset.dragged = 'true';
+        noteData.x = Math.max(10, origX + dx);
+        noteData.y = Math.max(10, origY + dy);
+        element.style.left = `${noteData.x}px`;
+        element.style.top = `${noteData.y}px`;
+      };
+
+      const onEnd = () => {
+        if (!isDragging) return;
+        isDragging = false;
+        element.style.zIndex = 10;
+        window.saveCloudData();
+        window.removeEventListener('mousemove', onMove);
+        window.removeEventListener('mouseup', onEnd);
+      };
+
+      element.addEventListener('mousedown', onStart);
+    }
+
+    // ==================== スマホ リスト描画 ====================
+    window.renderMobileList = function() {
+      const container = document.getElementById('mobileListContainer');
+      if (!container) return;
+      container.innerHTML = '';
+
+      const query = (document.getElementById('mobileSearchInput')?.value || '').toLowerCase().trim();
+
+      let targetList = [];
+      if (query) {
+        targetList = window.notes.filter(n => 
+          (n.title && n.title.toLowerCase().includes(query)) ||
+          (n.body && n.body.toLowerCase().includes(query)) ||
+          (n.tag && n.tag.toLowerCase().includes(query)) ||
+          (n.todos && n.todos.some(t => t.text.toLowerCase().includes(query)))
+        );
+      } else {
+        targetList = getNotesForDate(window.currentDate);
+        if (window.currentFilterTag !== 'ALL') {
+          targetList = targetList.filter(n => (n.tag || '').includes(window.currentFilterTag));
+        }
+      }
+
+      if (targetList.length === 0) {
+        container.innerHTML = '<div class="text-center py-12 text-stone-400 text-xs">付箋がありません</div>';
+        return;
+      }
+
+      targetList.forEach(note => {
+        const st = window.STATUS_INFO[note.status || 'todo'];
+        const card = document.createElement('div');
+        card.className = `p-3.5 rounded-xl border bg-white shadow-sm space-y-2 ${st.border}`;
+
+        let todosHtml = '';
+        if (note.todos && note.todos.length > 0) {
+          todosHtml = `<div class="space-y-1.5 pt-1">` + note.todos.map((t, idx) => `
+            <div class="flex items-center gap-2 text-xs">
+              <input type="checkbox" ${t.done ? 'checked' : ''} onchange="toggleTodoItem('${note.id}', ${idx}, event)" class="rounded text-amber-600 focus:ring-0">
+              <span class="${t.done ? 'completed-text' : ''} flex-1">${escapeHtml(t.text)}</span>
+            </div>
+          `).join('') + `</div>`;
+        }
+
+        let pathAction = '';
+        if (note.path) {
+          const isUrl = note.path.startsWith('http');
+          pathAction = `
+            <button onclick="quickCopyPath('${escapeQuotes(note.path)}', event)" class="text-[11px] font-medium text-stone-600 bg-stone-100 px-2 py-1 rounded flex items-center gap-1">
+              <i data-lucide="${isUrl ? 'external-link' : 'copy'}" class="w-3 h-3"></i>
+              ${isUrl ? '開く/コピー' : 'パスコピー'}
+            </button>
+          `;
+        }
+
+        card.innerHTML = `
+          <div class="flex items-center justify-between">
+            <button onclick="cycleStatus('${note.id}', event)" class="text-[10px] px-2 py-0.5 rounded-full font-bold ${st.badge}">
+              ${st.label}
+            </button>
+            <span class="text-[10px] text-stone-400">${note.targetDate ? '期日: ' + note.targetDate : (note.date || '未定')}</span>
+          </div>
+          <div onclick="openModal('${note.id}')" class="cursor-pointer">
+            <h4 class="font-bold text-sm text-stone-800 ${note.status === 'done' ? 'completed-text' : ''}">${escapeHtml(note.title)}</h4>
+            ${note.tag ? `<div class="mt-1 flex gap-1">${note.tag.split(',').map(t => `<span class="text-[10px] bg-stone-100 text-stone-600 px-1.5 py-0.5 rounded">#${escapeHtml(t.trim())}</span>`).join('')}</div>` : ''}
+          </div>
+          ${todosHtml}
+          ${note.body ? `<p class="text-xs text-stone-600 bg-stone-50 p-2 rounded line-clamp-3 whitespace-pre-wrap font-mono">${escapeHtml(note.body)}</p>` : ''}
+          <div class="flex items-center justify-between pt-1 border-t border-stone-100">
+            ${pathAction || '<div></div>'}
+            <button onclick="openModal('${note.id}')" class="text-xs text-amber-700 font-semibold">詳細・編集</button>
+          </div>
+        `;
+        container.appendChild(card);
+      });
+      lucide.createIcons();
+    };
+
+    window.handleMobileQuickAdd = function(e) {
+      e.preventDefault();
+      const input = document.getElementById('mobileQuickInput');
+      const val = input.value.trim();
+      if (!val) return;
+
+      const newNote = {
+        id: 'note_' + Date.now(),
+        date: window.currentDate,
+        x: 40 + Math.random() * 40,
+        y: 40 + Math.random() * 40,
+        title: val,
+        tag: window.currentFilterTag !== 'ALL' ? window.currentFilterTag : 'アイデア',
+        color: 'yellow',
+        status: 'todo',
+        path: '',
+        todos: [],
+        body: '',
+        targetDate: '',
+        remindDays: []
+      };
+      window.notes.unshift(newNote);
+      window.saveCloudData();
+      input.value = '';
+      renderAll();
+    };
+
+    window.cycleStatus = function(id, evt) {
+      if (evt) evt.stopPropagation();
+      const n = window.notes.find(x => x.id === id);
+      if (!n) return;
+      const order = ['todo', 'doing', 'waiting', 'done'];
+      n.status = order[(order.indexOf(n.status || 'todo') + 1) % order.length];
+      window.saveCloudData();
+      renderAll();
+    };
+
+    window.toggleTodoItem = function(noteId, idx, evt) {
+      evt.stopPropagation();
+      const n = window.notes.find(x => x.id === noteId);
+      if (n && n.todos && n.todos[idx]) {
+        n.todos[idx].done = evt.target.checked;
+        window.saveCloudData();
+        renderAll();
+      }
+    };
+
+    window.quickCopyPath = function(path, evt) {
+      if (evt) evt.stopPropagation();
+      navigator.clipboard.writeText(path).then(() => {
+        alert('クリップボードにコピーしました！\n' + path);
+      });
+    };
+
+    function escapeQuotes(str) {
+      return (str || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    }
+
+    // ==================== 翌日への引き継ぎ ====================
+    window.carryOverUnfinished = function() {
+      const dayNotes = getNotesForDate(window.currentDate);
+      const targets = dayNotes.filter(n => n.status !== 'done' && !n.targetDate);
+
+      if (targets.length === 0) {
+        alert('引き継ぐ通常の未完了付箋はありません。');
+        return;
+      }
+
+      const nextDay = new Date(window.currentDate);
+      nextDay.setDate(nextDay.getDate() + 1);
+      const nextDateStr = nextDay.toISOString().split('T')[0];
+
+      targets.forEach(n => {
+        window.notes.push({
+          ...JSON.parse(JSON.stringify(n)),
+          id: 'note_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+          date: nextDateStr,
+          x: (n.x || 30) + 15,
+          y: (n.y || 30) + 15
+        });
+      });
+
+      window.saveCloudData();
+      if (confirm(`${targets.length}件の付箋を明日（${nextDateStr}）へ引き継ぎました！\n明日のボードへ移動しますか？`)) {
+        window.currentDate = nextDateStr;
+        document.getElementById('datePicker').value = window.currentDate;
+        document.getElementById('mobileDatePicker').value = window.currentDate;
+        renderAll();
+      }
+    };
+
+    // ==================== 週次Markdown出力 ====================
+    window.checkWeeklyExports = function() {
+      const banner = document.getElementById('weeklyBannerContainer');
+      if (!banner) return;
+      banner.innerHTML = '';
+
+      const availableWeeks = getPastSaturdayFridayWeeks(4);
+      let pendingWeeks = availableWeeks.filter(w => !window.downloadedWeeks.includes(w.key));
+
+      if (pendingWeeks.length === 0) {
+        banner.classList.add('hidden');
+        return;
+      }
+
+      banner.classList.remove('hidden');
+      pendingWeeks.forEach(w => {
+        const row = document.createElement('div');
+        row.className = 'flex items-center justify-between bg-white px-3 py-1.5 rounded-md border border-amber-300 shadow-sm';
+        row.innerHTML = `
+          <span class="font-bold text-amber-950 flex items-center gap-1.5">
+            <i data-lucide="archive" class="w-4 h-4 text-amber-700"></i>
+            週報未出力: ${w.label} (${w.start} 〜 ${w.end})
+          </span>
+          <button onclick="downloadWeekMarkdown('${w.start}', '${w.end}', '${w.key}')" class="bg-amber-600 hover:bg-amber-700 text-white font-bold px-3 py-1 rounded text-xs transition flex items-center gap-1">
+            <i data-lucide="download" class="w-3.5 h-3.5"></i> Markdown出力
+          </button>
+        `;
+        banner.appendChild(row);
+      });
+      lucide.createIcons();
+    };
+
+    function getPastSaturdayFridayWeeks(count) {
+      const weeks = [];
+      const now = new Date();
+      let d = new Date(now);
+      while (d.getDay() !== 6) d.setDate(d.getDate() - 1);
+
+      for (let i = 0; i < count; i++) {
+        const sat = new Date(d);
+        sat.setDate(sat.getDate() - 7 * (i + 1));
+        const fri = new Date(sat);
+        fri.setDate(fri.getDate() + 6);
+        const sStr = sat.toISOString().split('T')[0];
+        const fStr = fri.toISOString().split('T')[0];
+        weeks.push({ key: `${sStr}_${fStr}`, label: `${sStr.slice(5)}週`, start: sStr, end: fStr });
+      }
+      return weeks;
+    }
+
+    window.downloadWeekMarkdown = function(startStr, endStr, weekKey) {
+      const startTime = new Date(startStr).getTime();
+      const endTime = new Date(endStr).getTime();
+
+      let md = `# 週次まとめ (${startStr} 〜 ${endStr})\n\n`;
+      md += `## 📅 日別ログ & 一言メモ\n\n`;
+      let cur = new Date(startStr);
+      while (cur.getTime() <= endTime) {
+        const dStr = cur.toISOString().split('T')[0];
+        const dayQuote = window.dailyQuotes[dStr];
+        const dayNotes = window.notes.filter(n => n.date === dStr);
+
+        md += `### ${dStr}\n`;
+        if (dayQuote && dayQuote.trim()) {
+          md += `> 💭 **今日の一言**: ${dayQuote.trim().replace(/\n/g, ' ')}\n\n`;
+        } else {
+          md += `> 💭 *(一言メモなし)*\n\n`;
+        }
+
+        if (dayNotes.length > 0) {
+          dayNotes.forEach(n => {
+            const st = n.status === 'done' ? '✅' : '⚪';
+            md += `- ${st} **[${n.tag || '一般'}] ${n.title}**\n`;
+            if (n.todos && n.todos.length > 0) {
+              n.todos.forEach(t => { md += `  - [${t.done ? 'x' : ' '}] ${t.text}\n`; });
+            }
+          });
+        }
+        md += `\n---\n\n`;
+        cur.setDate(cur.getDate() + 1);
+      }
+
+      const blob = new Blob([md], { type: 'text/markdown;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Weekly_${startStr}_to_${endStr}.md`;
+      a.click();
+      URL.revokeObjectURL(url);
+
+      window.downloadedWeeks.push(weekKey);
+      window.saveCloudData();
+      checkWeeklyExports();
+    };
+
+    // ==================== モーダル ====================
+    window.openModal = function(noteId) {
+      window.activeEditingId = noteId;
+      const note = window.notes.find(n => n.id === noteId);
+      if (!note) return;
+
+      document.getElementById('modalTitle').value = note.title || '';
+      document.getElementById('modalTag').value = note.tag || '';
+      document.getElementById('modalStatus').value = note.status || 'todo';
+      document.getElementById('modalColor').value = note.color || 'yellow';
+      document.getElementById('modalLinkPath').value = note.path || '';
+      document.getElementById('modalBody').value = note.body || '';
+
+      document.getElementById('modalTargetDate').value = note.targetDate || '';
+      const r = note.remindDays || [];
+      document.getElementById('remind_30').checked = r.includes(30);
+      document.getElementById('remind_14').checked = r.includes(14);
+      document.getElementById('remind_3').checked = r.includes(3);
+      document.getElementById('remind_0').checked = r.includes(0);
+
+      renderModalTodoList(note.todos || []);
+      document.getElementById('detailModal').classList.remove('hidden');
+      document.getElementById('detailModal').classList.add('flex');
+      lucide.createIcons();
+    };
+
+    window.clearModalTargetDate = function() {
+      document.getElementById('modalTargetDate').value = '';
+      document.getElementById('remind_30').checked = false;
+      document.getElementById('remind_14').checked = false;
+      document.getElementById('remind_3').checked = false;
+      document.getElementById('remind_0').checked = false;
+    };
+
+    window.closeModal = function() {
+      document.getElementById('detailModal').classList.add('hidden');
+      document.getElementById('detailModal').classList.remove('flex');
+      window.activeEditingId = null;
+    };
+
+    function renderModalTodoList(todos) {
+      const container = document.getElementById('modalTodoList');
+      container.innerHTML = '';
+      todos.forEach((t, i) => {
+        const row = document.createElement('div');
+        row.className = 'flex items-center gap-2';
+        row.innerHTML = `
+          <input type="checkbox" ${t.done ? 'checked' : ''} onchange="modalTodoToggled(${i}, this.checked)" class="rounded text-amber-600 focus:ring-0">
+          <input type="text" value="${escapeHtml(t.text)}" oninput="modalTodoTextChanged(${i}, this.value)" placeholder="タスク..." class="text-xs flex-1 bg-white border border-stone-200 rounded px-2.5 py-1 outline-none ${t.done ? 'completed-text text-stone-400' : 'text-stone-700'}">
+          <button onclick="removeModalTodo(${i})" class="text-stone-400 hover:text-rose-500 p-0.5">
+            <i data-lucide="x" class="w-3.5 h-3.5"></i>
+          </button>
+        `;
+        container.appendChild(row);
+      });
+      lucide.createIcons();
+    }
+
+    window.addModalTodo = function() {
+      const note = window.notes.find(n => n.id === window.activeEditingId);
+      if (!note) return;
+      if (!note.todos) note.todos = [];
+      note.todos.push({ text: '', done: false });
+      renderModalTodoList(note.todos);
+    };
+
+    window.modalTodoToggled = function(index, val) {
+      const note = window.notes.find(n => n.id === window.activeEditingId);
+      if (note && note.todos[index]) {
+        note.todos[index].done = val;
+        renderModalTodoList(note.todos);
+      }
+    };
+
+    window.modalTodoTextChanged = function(index, text) {
+      const note = window.notes.find(n => n.id === window.activeEditingId);
+      if (note && note.todos[index]) note.todos[index].text = text;
+    };
+
+    window.removeModalTodo = function(index) {
+      const note = window.notes.find(n => n.id === window.activeEditingId);
+      if (note && note.todos) {
+        note.todos.splice(index, 1);
+        renderModalTodoList(note.todos);
+      }
+    };
+
+    window.copyModalPath = function() {
+      const val = document.getElementById('modalLinkPath').value.trim();
+      if (!val) { alert('パスまたはURLが入力されていません。'); return; }
+      navigator.clipboard.writeText(val).then(() => {
+        alert('クリップボードにコピーしました！\n' + val);
+      });
+    };
+
+    window.saveAndCloseModal = function() {
+      const note = window.notes.find(n => n.id === window.activeEditingId);
+      if (note) {
+        note.title = document.getElementById('modalTitle').value.trim();
+        note.tag = document.getElementById('modalTag').value.trim();
+        note.status = document.getElementById('modalStatus').value;
+        note.color = document.getElementById('modalColor').value;
+        note.path = document.getElementById('modalLinkPath').value.trim();
+        note.body = document.getElementById('modalBody').value;
+        
+        const targetDate = document.getElementById('modalTargetDate').value;
+        note.targetDate = targetDate;
+
+        if (targetDate) {
+          note.date = '';
+        } else if (!note.date) {
+          note.date = window.currentDate;
+        }
+
+        const r = [];
+        if (document.getElementById('remind_30').checked) r.push(30);
+        if (document.getElementById('remind_14').checked) r.push(14);
+        if (document.getElementById('remind_3').checked) r.push(3);
+        if (document.getElementById('remind_0').checked) r.push(0);
+        note.remindDays = r;
+
+        window.saveCloudData();
+        renderAll();
+      }
+      closeModal();
+    };
+
+    window.createNote = function() {
+      const newNote = {
+        id: 'note_' + Date.now(),
+        date: window.currentDate,
+        x: 60 + Math.random() * 80,
+        y: 60 + Math.random() * 80,
+        title: '新規メモ',
+        tag: window.currentFilterTag !== 'ALL' ? window.currentFilterTag : (window.customTags[0] || '仕事'),
+        color: 'yellow',
+        status: 'todo',
+        path: '',
+        todos: [{ text: '最初のタスク', done: false }],
+        body: '',
+        targetDate: '',
+        remindDays: []
+      };
+      window.notes.push(newNote);
+      window.saveCloudData();
+      renderAll();
+      openModal(newNote.id);
+    };
+
+    window.deleteCurrentNote = function() {
+      if (confirm('この付箋を削除してもよろしいですか？')) {
+        window.notes = window.notes.filter(n => n.id !== window.activeEditingId);
+        window.saveCloudData();
+        renderAll();
+        closeModal();
+      }
+    };
+
+    window.deleteNoteQuick = function(id, evt) {
+      evt.stopPropagation();
+      if (confirm('この付箋を削除しますか？')) {
+        window.notes = window.notes.filter(n => n.id !== id);
+        window.saveCloudData();
+        renderAll();
+      }
+    };
+
+    window.openFutureModal = function() {
+      const container = document.getElementById('futureListContainer');
+      container.innerHTML = '';
+
+      const futureNotes = window.notes.filter(n => n.targetDate).sort((a, b) => a.targetDate.localeCompare(b.targetDate));
+
+      if (futureNotes.length === 0) {
+        container.innerHTML = '<div class="text-center py-8 text-stone-400">登録された未来の予定はありません。</div>';
+      } else {
+        futureNotes.forEach(n => {
+          const div = document.createElement('div');
+          div.className = 'p-3 bg-stone-50 border border-stone-200 rounded-xl flex items-center justify-between';
+          div.innerHTML = `
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="font-bold text-indigo-700">${n.targetDate}</span>
+                <span class="font-semibold text-stone-800">${escapeHtml(n.title)}</span>
+              </div>
+              <div class="text-[11px] text-stone-500 mt-0.5">リマインド: ${n.remindDays && n.remindDays.length ? n.remindDays.join('日前, ') + '日前' : '当日のみ'}</div>
+            </div>
+            <div class="flex items-center gap-1">
+              <button onclick="openModal('${n.id}'); closeFutureModal();" class="text-xs bg-white border border-stone-300 px-2.5 py-1 rounded text-stone-700 font-medium hover:bg-stone-100">開く</button>
+            </div>
+          `;
+          container.appendChild(div);
+        });
+      }
+
+      document.getElementById('futureModal').classList.remove('hidden');
+      document.getElementById('futureModal').classList.add('flex');
+      lucide.createIcons();
+    };
+
+    window.closeFutureModal = function() {
+      document.getElementById('futureModal').classList.add('hidden');
+      document.getElementById('futureModal').classList.remove('flex');
+    };
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return str.replace(/[&<>'"]/g, 
+        tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag)
+      );
+    }
+  </script>
+</body>
+</html>
